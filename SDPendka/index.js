@@ -1,13 +1,154 @@
 const { createApp, defineComponent } = Vue;
 
+// Observer class for notifications
+class NotificationService {
+    constructor() {
+        this.subscribers = [];
+    }
+
+    subscribe(subscriber) {
+        this.subscribers.push(subscriber);
+    }
+
+    notify(message) {
+        this.subscribers.forEach(subscriber => subscriber.update(message));
+    }
+}
+
+// Observer for displaying notifications
+class NotificationDisplay {
+    constructor(notificationsArray) {
+        this.notificationsArray = notificationsArray; // link to the notifications array
+    }
+
+    update(message) {
+        console.log('Notification:', message);
+        this.notificationsArray.push(message); // add message to the notifications array
+    }
+}
+
+// Sort Strategies
+class NameSortStrategy {
+    sort(recipes) {
+        return recipes.sort((a, b) => a.name.localeCompare(b.name));
+    }
+}
+
+class IngredientCountSortStrategy {
+    sort(recipes) {
+        return recipes.sort((a, b) => a.ingredients.length - b.ingredients.length);
+    }
+}
+
+// Composite Pattern: Ingredient and CompositeIngredient
+class Ingredient {
+    constructor(name) {
+        this.name = name;
+    }
+}
+
+class CompositeIngredient {
+    constructor(name) {
+        this.name = name;
+        this.ingredients = [];
+    }
+
+    add(ingredient) {
+        this.ingredients.push(ingredient);
+    }
+
+    getIngredients() {
+        return this.ingredients;
+    }
+}
+
+// Facade Pattern: RecipeManager
+class RecipeManager {
+    constructor() {
+        this.recipes = [];
+        this.notificationService = new NotificationService();
+        this.sortStrategy = new NameSortStrategy();
+    }
+
+    addRecipe(name, ingredients) {
+        const newRecipe = {
+            id: Date.now(),
+            name: name,
+            ingredients: ingredients
+        };
+        this.recipes.push(newRecipe);
+        this.notificationService.notify(`Recipe "${name}" has been added.`);
+    }
+
+    deleteRecipe(recipe) {
+        this.recipes = this.recipes.filter(r => r.id !== recipe.id);
+        this.notificationService.notify(`Recipe "${recipe.name}" has been deleted.`);
+    }
+
+    getSortedRecipes() {
+        return this.sortStrategy.sort(this.recipes);
+    }
+
+    changeSortStrategy(strategy) {
+        if (strategy === 'name') {
+            this.sortStrategy = new NameSortStrategy();
+        } else if (strategy === 'ingredientCount') {
+            this.sortStrategy = new IngredientCountSortStrategy();
+        }
+    }
+}
+
+// Decorator Pattern for Recipe Variations
+class Recipe {
+    constructor(name, ingredients) {
+        this.name = name;
+        this.ingredients = ingredients;
+    }
+
+    getName() {
+        return this.name;
+    }
+
+    getIngredients() {
+        return this.ingredients;
+    }
+}
+
+class SpicyDecorator {
+    constructor(recipe) {
+        this.recipe = recipe;
+    }
+
+    getName() {
+        return `${this.recipe.getName()} (Spicy)`;
+    }
+
+    getIngredients() {
+        return [...this.recipe.getIngredients(), 'Chili Peppers'];
+    }
+}
+
+class VeganDecorator {
+    constructor(recipe) {
+        this.recipe = recipe;
+    }
+
+    getName() {
+        return `${this.recipe.getName()} (Vegan)`;
+    }
+
+    getIngredients() {
+        return [...this.recipe.getIngredients(), 'Tofu'];
+    }
+}
+
 const RecipeList = defineComponent({
     data() {
         return {
-            recipes: [],
+            recipeManager: new RecipeManager(),
             newRecipeName: '',
             newRecipeIngredients: '',
             filterIngredient: '',
-            sortOption: 'name',
             notifications: [],
             isEditing: false,
             recipeToEdit: null,
@@ -15,21 +156,13 @@ const RecipeList = defineComponent({
     },
     computed: {
         filteredAndSortedRecipes() {
-            let filteredRecipes = this.recipes;
+            let filteredRecipes = this.recipeManager.getSortedRecipes();
 
-            // Filtering by ingredient
             if (this.filterIngredient) {
                 const ingredientLower = this.filterIngredient.toLowerCase();
                 filteredRecipes = filteredRecipes.filter(recipe =>
                     recipe.ingredients.some(ingredient => ingredient.toLowerCase().includes(ingredientLower))
                 );
-            }
-
-            // Sorting recipes
-            if (this.sortOption === 'name') {
-                filteredRecipes.sort((a, b) => a.name.localeCompare(b.name));
-            } else if (this.sortOption === 'ingredientCount') {
-                filteredRecipes.sort((a, b) => a.ingredients.length - b.ingredients.length);
             }
 
             return filteredRecipes;
@@ -39,11 +172,11 @@ const RecipeList = defineComponent({
         loadRecipes() {
             const storedRecipes = localStorage.getItem('recipes');
             if (storedRecipes) {
-                this.recipes = JSON.parse(storedRecipes);
+                this.recipeManager.recipes = JSON.parse(storedRecipes);
             }
         },
         saveRecipes() {
-            localStorage.setItem('recipes', JSON.stringify(this.recipes));
+            localStorage.setItem('recipes', JSON.stringify(this.recipeManager.recipes));
         },
         addOrUpdateRecipe() {
             if (this.newRecipeName && this.newRecipeIngredients) {
@@ -55,41 +188,53 @@ const RecipeList = defineComponent({
                     this.recipeToEdit.ingredients = ingredients;
                     this.isEditing = false;
                     this.recipeToEdit = null;
+                    this.notifyUser(`Recipe "${this.newRecipeName}" has been updated.`);
                 } else {
-                    // Add new recipe
-                    const newRecipe = {
-                        id: Date.now(),
-                        name: this.newRecipeName,
-                        ingredients: ingredients
-                    };
-                    this.recipes.push(newRecipe);
+                    this.recipeManager.addRecipe(this.newRecipeName, ingredients);
                 }
                 this.saveRecipes();
-                this.notifications.push(`Recipe "${this.newRecipeName}" has been saved.`);
                 this.newRecipeName = '';
                 this.newRecipeIngredients = '';
             } else {
-                alert('Please enter a recipe name and ingredients.');
+                this.notifyUser('Please enter a recipe name and ingredients.');
             }
         },
         deleteRecipe(recipe) {
-            this.recipes = this.recipes.filter(r => r.id !== recipe.id);
+            this.recipeManager.deleteRecipe(recipe);
             this.saveRecipes();
-            this.notifications.push(`Recipe "${recipe.name}" has been deleted.`);
         },
         editRecipe(recipe) {
             this.newRecipeName = recipe.name;
             this.newRecipeIngredients = recipe.ingredients.join(', ');
             this.isEditing = true;
             this.recipeToEdit = recipe;
+        },
+        changeSortStrategy(strategy) {
+            this.recipeManager.changeSortStrategy(strategy);
+        },
+        notifyUser(message) {
+            this.notifications.push(message); // Push notification to local notifications array
+        },
+        addSpicyVariation(recipe) {
+            const spicyRecipe = new SpicyDecorator(new Recipe(recipe.name, recipe.ingredients));
+            this.recipeManager.addRecipe(spicyRecipe.getName(), spicyRecipe.getIngredients());
+            this.saveRecipes(); // Save to local storage after adding the spicy variation
+        },
+        addVeganVariation(recipe) {
+            const veganRecipe = new VeganDecorator(new Recipe(recipe.name, recipe.ingredients));
+            this.recipeManager.addRecipe(veganRecipe.getName(), veganRecipe.getIngredients());
+            this.saveRecipes(); // Save to local storage after adding the vegan variation
         }
     },
     mounted() {
-        this.loadRecipes(); // Load recipes from local storage on mount
+        this.loadRecipes();
+
+        // Register a notification display observer
+        const notificationDisplay = new NotificationDisplay(this.notifications); // Pass the notifications array
+        this.recipeManager.notificationService.subscribe(notificationDisplay);
     },
     template: `
-          <div>
-        <!-- Add / Edit Recipe Form -->
+      <div>
         <div class="mb-5">
           <h4>{{ isEditing ? 'Edit Recipe' : 'Add a New Recipe' }}</h4>
           <input type="text" class="form-control mb-2" v-model="newRecipeName" placeholder="Recipe Name" />
@@ -97,20 +242,18 @@ const RecipeList = defineComponent({
           <button class="btn btn-primary" @click="addOrUpdateRecipe">{{ isEditing ? 'Update Recipe' : 'Add Recipe' }}</button>
         </div>
 
-        <!-- Filters and Sorting -->
         <div class="row">
           <div class="col-md-3">
             <h4>Filter Recipes</h4>
             <input type="text" class="form-control" v-model="filterIngredient" placeholder="Enter ingredient" />
 
             <h4 class="mt-4">Sort Recipes</h4>
-            <select class="form-control" v-model="sortOption">
+            <select class="form-control" @change="changeSortStrategy($event.target.value)">
               <option value="name">By Name</option>
               <option value="ingredientCount">By Ingredient Count</option>
             </select>
           </div>
 
-          <!-- Recipes List -->
           <div class="col-md-9">
             <h2 class="mb-4">Recipes</h2>
             <div class="row">
@@ -121,6 +264,8 @@ const RecipeList = defineComponent({
                     <p class="card-text"><strong>Ingredients:</strong> {{ recipe.ingredients.join(", ") }}</p>
                     <button class="btn btn-warning btn-sm" @click="editRecipe(recipe)">Edit</button>
                     <button class="btn btn-danger btn-sm" @click="deleteRecipe(recipe)">Delete</button>
+                    <button class="btn btn-success btn-sm mt-2" @click="addSpicyVariation(recipe)">Add Spicy Variation</button>
+                    <button class="btn btn-success btn-sm mt-2" @click="addVeganVariation(recipe)">Add Vegan Variation</button>
                   </div>
                 </div>
               </div>
@@ -128,7 +273,6 @@ const RecipeList = defineComponent({
           </div>
         </div>
 
-        <!-- Notifications Section -->
         <div class="mt-5">
           <h3>Notifications</h3>
           <ul class="list-group">
@@ -141,6 +285,7 @@ const RecipeList = defineComponent({
     `
 });
 
+// Create and mount the Vue application
 createApp({
     components: {
         RecipeList
